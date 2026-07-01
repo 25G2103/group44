@@ -163,8 +163,10 @@ class Group:
  
         self.budget = random.randint(1, 5)
         self.crowd_tolerance = random.random()
-        self.is_smoker = random.random() < 0.3   # 30%の確率で喫煙者
- 
+        self.is_smoker = random.random() < 0.15   # 15%の確率で喫煙者
+        self.is_hurried = False
+
+
     def current_speed(self):
         d = abs(self.x - ENTRANCE_X)
         if d < SLOWDOWN_RANGE:
@@ -185,23 +187,20 @@ def pick_group_size():
     return random.choice(GROUP_SIZES)
  
  
-def find_seat_for_group(seats, group_size):
-    """
-    エージェントの移動ルール：
-      ① 人数以上の席であること（capacity >= group_size）
-      ② 奥側から座る（入口から離れた席 = x が大きい席を優先）
-    """
-    # ① 人数以上の席だけを候補にする
-    candidates = [s for s in seats if (not s.occupied) and (s.capacity >= group_size)]
+def find_seat_for_group(seats, group_size, group):
+    candidates = [s for s in seats if not s.occupied and s.capacity >= group_size]
     if not candidates:
         return None
 
-    # ② 奥側（入口から遠い = x が大きい）を優先
-    #    ただし、同じ奥行きなら「席の小ささ（capacity）」が小さい方を優先
-    candidates.sort(key=lambda s: (s.x, -s.capacity), reverse=True)
+    # 急いでいる人は入口側（x が小さい）を優先
+    if group.is_hurried:
+        candidates.sort(key=lambda s: (s.x, s.capacity))
+    else:
+        # 通常は席の小ささを優先
+        candidates.sort(key=lambda s: s.capacity)
 
     return candidates[0]
- 
+
  
 def calc_entry_probability(group, visible_rate, current_occupancy_rate):
     price_fit = max(0, 1 - abs(STORE_PRICE_LEVEL - group.budget) * 0.3)
@@ -274,8 +273,9 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
                     if g.is_smoker:
                         total_smokers += 1
 
-                    target = find_seat_for_group(seats, g.size)
+                    target = find_seat_for_group(seats, g.size,g)
                     if random.random() < entry_prob and target is not None:
+                        # --- 入店処理（必ず実行） ---
                         target.occupied = True
                         target.party_size = g.size
                         g.target_seat = target
@@ -286,6 +286,11 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
                         entered_crowd_tol.append(g.crowd_tolerance)
                         if g.is_smoker:
                             entered_smokers += 1
+
+                        # --- 急ぎ属性付与（例：15%） ---
+                        if random.random() < 0.15:
+                            g.is_hurried = True
+
                     else:
                         passed_total += g.size
                         groups_passed += 1
