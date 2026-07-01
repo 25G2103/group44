@@ -186,11 +186,20 @@ def pick_group_size():
  
  
 def find_seat_for_group(seats, group_size):
-    """人数に合う空席（卓）を探す。収容人数が最小の卓を優先する。"""
-    candidates = [s for s in seats if not s.occupied and s.capacity >= group_size]
+    """
+    エージェントの移動ルール：
+      ① 人数以上の席であること（capacity >= group_size）
+      ② 奥側から座る（入口から離れた席 = x が大きい席を優先）
+    """
+    # ① 人数以上の席だけを候補にする
+    candidates = [s for s in seats if (not s.occupied) and (s.capacity >= group_size)]
     if not candidates:
         return None
-    candidates.sort(key=lambda s: s.capacity)
+
+    # ② 奥側（入口から遠い = x が大きい）を優先
+    #    ただし、同じ奥行きなら「席の小ささ（capacity）」が小さい方を優先
+    candidates.sort(key=lambda s: (s.x, -s.capacity), reverse=True)
+
     return candidates[0]
  
  
