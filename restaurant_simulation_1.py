@@ -305,6 +305,12 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
     entered_smokers = 0
     total_smokers = 0
 
+    passed_smokers_total = 0
+    passed_nonsmokers_total = 0
+    passed_smokers_cumulative_history = []
+    passed_nonsmokers_cumulative_history = []
+    #素通り判定
+
     total_seats_capacity = sum(s.capacity for s in seats)
 
     window_seats = [s for s in seats if s.is_window]
@@ -357,6 +363,11 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
                     else:
                         passed_total += g.size
                         groups_passed += 1
+                        # 喫煙者/非喫煙者を分けて累積
+                        if g.is_smoker:
+                            passed_smokers_total += g.size
+                        else:
+                            passed_nonsmokers_total += g.size
 
                 if g.state == "walking":
                     g.x -= g.current_speed()
@@ -421,6 +432,8 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
         history.append(snapshot)
         occupied_seat_count_history.append(sum(1 for s in seats if s.occupied))
         passed_cumulative_history.append(passed_total)
+        passed_smokers_cumulative_history.append(passed_smokers_total)
+        passed_nonsmokers_cumulative_history.append(passed_nonsmokers_total)
 
         w_rate = (sum(1 for s in window_seats if s.occupied) / len(window_seats)) if window_seats else 0.0
         nw_rate = (sum(1 for s in nonwindow_seats if s.occupied) / len(nonwindow_seats)) if nonwindow_seats else 0.0
@@ -436,7 +449,7 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
 
     smoker_walking_history = []
     smoker_entered_history = []
-    smoker_passed_history = []
+    #smoker_passed_history = []
 
     for snap in history:
         walking = sum(grp["size"] for grp in snap["groups"] if grp["state"] == "walking")
@@ -477,7 +490,8 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
         "passed_history": passed_cumulative_history,
         "smoker_walking_history": smoker_walking_history,
         "smoker_entered_history": smoker_entered_history,
-        "smoker_passed_history": smoker_passed_history,
+        "smoker_passed_history": passed_smokers_cumulative_history,        #変更
+        "nonsmoker_passed_history": passed_nonsmokers_cumulative_history,  #追加
         "leave_history": leave_history,
         "window_occ_history": window_occ_history,
         "nonwindow_occ_history": nonwindow_occ_history,
