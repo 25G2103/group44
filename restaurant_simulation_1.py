@@ -200,30 +200,28 @@ def pick_group_size():
     return random.choices(GROUP_SIZES, weights=GROUP_SIZE_WEIGHTS, k=1)[0]
 
 
-def find_seat_for_group(seats, group_size):
+def find_seat_for_group(seats, group_size, strategy="window"):
     """
     エージェントの移動ルール：
       ① 人数以上の席であること（capacity >= group_size）
-      ② 窓側（is_window=True）を最優先で埋める
+      ② strategy="window" : 窓側（is_window=True）を最優先で埋める
+         strategy="depth"  : 奥側（x が大きい）を最優先で埋める
       ③ 同条件内では、席を無駄にしないよう capacity が小さい席を優先
     """
     candidates = [s for s in seats if (not s.occupied) and (s.capacity >= group_size)]
     if not candidates:
         return None
 
-    # is_window=Trueを先に（Falseより優先）、次にcapacityが小さい順
-    candidates.sort(key=lambda s: (not s.is_window, s.capacity))
+    if strategy == "window":
+        # is_window=True を優先（Falseより優先）、次にcapacityが小さい順
+        candidates.sort(key=lambda s: (not s.is_window, s.capacity))
+    elif strategy == "depth":
+        # x が大きい（奥）ほど優先、同じ奥行きならcapacityが小さい順
+        candidates.sort(key=lambda s: (-s.x, s.capacity))
+    else:
+        raise ValueError(f"unknown strategy: {strategy}")
 
     return candidates[0]
-    #candidates = [s for s in seats if (not s.occupied) and (s.capacity >= group_size)]
-    #if not candidates:
-        #return None
-
-    # ② 奥側（入口から遠い = x が大きい）を優先
-    #    ただし、同じ奥行きなら「席の小ささ（capacity）」が小さい方を優先
-    #candidates.sort(key=lambda s: (s.x, -s.capacity), reverse=True)
-
-    #return candidates[0]
 
 def calc_entry_probability(group, visible_rate, current_occupancy_rate):
     price_fit = max(0, 1 - abs(STORE_PRICE_LEVEL - group.budget) * 0.3)
@@ -248,7 +246,7 @@ def calc_entry_probability(group, visible_rate, current_occupancy_rate):
 # ============================================================
 def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_SEED,
                     initial_fill_rate=INITIAL_FILL_RATE, window_fill_rate=None,
-                    nonwindow_fill_rate=None):
+                    nonwindow_fill_rate=None, seat_strategy="window"):
 
     seats = create_layout_seats()
 
@@ -343,7 +341,7 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
                     if g.is_smoker:
                         total_smokers += 1
 
-                    target = find_seat_for_group(seats, g.size)
+                    target = find_seat_for_group(seats, g.size, strategy=seat_strategy)
                     if random.random() < entry_prob and target is not None:
                         target.occupied = True
                         target.party_size = g.size
@@ -446,7 +444,6 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
 
         walking_history.append(walking)
         entered_history.append(entered)
-        # passed_history.append(...) の行は削除
 
         smoker_walking = sum(
             grp["size"] for grp in snap["groups"]
@@ -459,7 +456,6 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
 
         smoker_walking_history.append(smoker_walking)
         smoker_entered_history.append(smoker_entered)
-        # smoker_passed_history.append(...) の行も削除
 
     return {
         "history": history,
@@ -807,36 +803,74 @@ if __name__ == "__main__":
     create_animation(result)
     plot_customer_graph(result)
     plot_leave_reason_graph(result)
-    
-    # --- 実験：窓側だけ初期満席 ---
-    result_window = run_simulation(
+
+    # ============================================================
+    # 実験：窓側だけ初期満席 × 座席選択戦略（前 or 奥から詰める）
+    # ============================================================
+
+    # --- 窓側満席 × 前から詰める（window戦略） ---
+    result_window_front = run_simulation(
         window_fill_rate=1.0,
         nonwindow_fill_rate=0.0,
         spawn_interval=SPAWN_INTERVAL,
-        seed=RANDOM_SEED
+        seed=RANDOM_SEED,
+        seat_strategy="window"
     )
-    print("=== 実験：窓側だけ初期満席 ===")
-    print_results(result_window)
-    plot_customer_graph(result_window, "customer_window.png")
-    plot_leave_reason_graph(result_window, save_path="leave_reason_window.png")
+    print("=== 実験：窓側だけ初期満席 × 前から詰める ===")
+    print_results(result_window_front)
+    plot_customer_graph(result_window_front, "customer_window_front.png")
+    plot_leave_reason_graph(result_window_front, save_path="leave_reason_window_front.png")
 
-    # --- 実験：非窓側だけ初期満席 ---
-    result_nonwindow = run_simulation(
+    # --- 窓側満席 × 奥から詰める（depth戦略） ---
+    result_window_depth = run_simulation(
+        window_fill_rate=1.0,
+        nonwindow_fill_rate=0.0,
+        spawn_interval=SPAWN_INTERVAL,
+        seed=RANDOM_SEED,
+        seat_strategy="depth"
+    )
+    print("=== 実験：窓側だけ初期満席 × 奥から詰める ===")
+    print_results(result_window_depth)
+    plot_customer_graph(result_window_depth, "customer_window_depth.png")
+    plot_leave_reason_graph(result_window_depth, save_path="leave_reason_window_depth.png")
+
+    # ============================================================
+    # 実験：非窓側だけ初期満席 × 座席選択戦略（前 or 奥から詰める）
+    # ============================================================
+
+    # --- 非窓側満席 × 前から詰める（window戦略） ---
+    result_nonwindow_front = run_simulation(
         window_fill_rate=0.0,
         nonwindow_fill_rate=1.0,
         spawn_interval=SPAWN_INTERVAL,
-        seed=RANDOM_SEED
+        seed=RANDOM_SEED,
+        seat_strategy="window"
     )
-    print("=== 実験：非窓側だけ初期満席 ===")
-    print_results(result_nonwindow)
-    plot_customer_graph(result_nonwindow, save_path="customer_graph_nonwindow.png")
-    plot_leave_reason_graph(result_nonwindow, save_path="leave_reason_nonwindow.png")
-    plot_window_occupancy_comparison(result_window, result_nonwindow)
+    print("=== 実験：非窓側だけ初期満席 × 前から詰める ===")
+    print_results(result_nonwindow_front)
+    plot_customer_graph(result_nonwindow_front, save_path="customer_nonwindow_front.png")
+    plot_leave_reason_graph(result_nonwindow_front, save_path="leave_reason_nonwindow_front.png")
 
-    # --- 比較リザルト ---
-    print("\n=== 窓側 vs 非窓側 初期埋まり比較 ===")
-    print(f"窓側初期埋まり → 最終使用卓数: {result_window['occupied_seat_count_history'][-1]}")
-    print(f"非窓側初期埋まり → 最終使用卓数: {result_nonwindow['occupied_seat_count_history'][-1]}")
-    print(f"窓側初期埋まり → 入店人数: {result_window['entered_total']}")
-    print(f"非窓側初期埋まり → 入店人数: {result_nonwindow['entered_total']}")
+    # --- 非窓側満席 × 奥から詰める（depth戦略） ---
+    result_nonwindow_depth = run_simulation(
+        window_fill_rate=0.0,
+        nonwindow_fill_rate=1.0,
+        spawn_interval=SPAWN_INTERVAL,
+        seed=RANDOM_SEED,
+        seat_strategy="depth"
+    )
+    print("=== 実験：非窓側だけ初期満席 × 奥から詰める ===")
+    print_results(result_nonwindow_depth)
+    plot_customer_graph(result_nonwindow_depth, save_path="customer_nonwindow_depth.png")
+    plot_leave_reason_graph(result_nonwindow_depth, save_path="leave_reason_nonwindow_depth.png")
 
+    plot_window_occupancy_comparison(result_window_front, result_nonwindow_front)
+
+    # ============================================================
+    # 比較リザルト
+    # ============================================================
+    print("\n=== 窓側 vs 非窓側 × 前 vs 奥 詰め比較 ===")
+    print(f"窓側満席・前詰め   → 最終使用卓数: {result_window_front['occupied_seat_count_history'][-1]} / 入店人数: {result_window_front['entered_total']}")
+    print(f"窓側満席・奥詰め   → 最終使用卓数: {result_window_depth['occupied_seat_count_history'][-1]} / 入店人数: {result_window_depth['entered_total']}")
+    print(f"非窓側満席・前詰め → 最終使用卓数: {result_nonwindow_front['occupied_seat_count_history'][-1]} / 入店人数: {result_nonwindow_front['entered_total']}")
+    print(f"非窓側満席・奥詰め → 最終使用卓数: {result_nonwindow_depth['occupied_seat_count_history'][-1]} / 入店人数: {result_nonwindow_depth['entered_total']}")
