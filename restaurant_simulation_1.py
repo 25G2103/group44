@@ -440,20 +440,77 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
         window_occ_history.append(w_rate)
         nonwindow_occ_history.append(nw_rate)
 
-    # ============================================================
-    # ループ終了後の集計
-    # ============================================================
+   # ============================================================
+# ループ終了後の集計
+# ============================================================
     walking_history = []
     entered_history = []
     passed_history = []
-
+    
     smoker_walking_history = []
     smoker_entered_history = []
-    #smoker_passed_history = []
+
+# --- 退店人数（フレーム軸）の累積推移 ---
+    left_per_frame = [0] * n_steps
+    for (frame, size, is_smoker, reason) in leave_history:
+        if frame < n_steps:
+            left_per_frame[frame] += size
+
+    left_cumulative_frame = []
+    total_left = 0
+    for x in left_per_frame:
+        total_left += x
+        left_cumulative_frame.append(total_left)
+
+# --- 退店人数（イベント軸）の累積（あなたの元コード） ---
+    left_cumulative_history = []
+    cumulative_left = 0
+    for (frame, size, is_smoker, reason) in leave_history:
+        cumulative_left += size
+        left_cumulative_history.append(cumulative_left)
+
+# --- 歩行中・入店中の人数をフレームごとに集計 ---
+    for snap in history:
+        walking = sum(grp["size"] for grp in snap["groups"] if grp["state"] == "walking")
+        entered = sum(grp["size"] for grp in snap["groups"] if grp["state"] == "entering")
+
+    walking_history.append(walking)
+    entered_history.append(entered)
+
+    smoker_walking = sum(
+        grp["size"] for grp in snap["groups"]
+        if grp["state"] == "walking" and grp["is_smoker"]
+    )
+    smoker_entered = sum(
+        grp["size"] for grp in snap["groups"]
+        if grp["state"] == "entering" and grp["is_smoker"]
+    )
+
+        # --- 入店人数（フレーム軸）の累積推移 ---
+    entered_per_frame = [0] * n_steps
+    for snap in history:
+        frame_entered = sum(
+            grp["size"] for grp in snap["groups"]
+            if grp["state"] == "entering"
+        )
+        entered_per_frame.append(frame_entered)
+
+    entered_per_frame = []
+    for snap in history:
+        frame_entered = sum(
+            grp["size"] for grp in snap["groups"]
+            if grp["state"] == "entering"
+            )
+        entered_per_frame.append(frame_entered)
+
+
+
+    smoker_walking_history.append(smoker_walking)
+    smoker_entered_history.append(smoker_entered)
 
     for snap in history:
         walking = sum(grp["size"] for grp in snap["groups"] if grp["state"] == "walking")
-        entered = sum(grp["size"] for grp in snap["groups"] if grp["state"] in ("entering", "seated"))
+        entered = sum(grp["size"] for grp in snap["groups"] if grp["state"] == "entering")
 
         walking_history.append(walking)
         entered_history.append(entered)
@@ -464,7 +521,7 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
         )
         smoker_entered = sum(
             grp["size"] for grp in snap["groups"]
-            if grp["state"] in ("entering", "seated") and grp["is_smoker"]
+            if grp["state"] == "entering" and grp["is_smoker"]
         )
 
         smoker_walking_history.append(smoker_walking)
@@ -504,6 +561,8 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
         "total_nonwindow_tables": total_nonwindow_tables,
         "total_nonwindow_capacity": total_nonwindow_capacity,
         "passed_cumulative_history": passed_cumulative_history,
+        "left_cumulative_history": left_cumulative_history,
+        "left_cumulative_frame": left_cumulative_frame,
     }
 
 
@@ -579,6 +638,80 @@ def plot_customer_graph(result, save_path="customer_graph.png"):
     plt.savefig(save_path, dpi=130)
     plt.close()
     print(f"来客者グラフを保存しました: {save_path}")
+
+def plot_entered_only_graph(result, save_path="entered_only_graph.png"):
+    entered = result["entered_history"]  # フレームごとの入店人数
+
+    entered_cumsum = []
+    total = 0
+    for x in entered:
+        total += x
+        entered_cumsum.append(total)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(entered_cumsum, color="#e8956a", linewidth=2, label="入店（累積）")
+
+    ax.set_xlabel("フレーム")
+    ax.set_ylabel("人数")
+    ax.set_title("入店人数の推移（累積）")
+    ax.grid(alpha=0.3)
+    ax.legend()
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=130)
+    plt.close()
+    print(f"入店人数グラフを保存しました: {save_path}")
+
+
+def plot_left_only_graph(result, save_path="left_only_graph.png"):
+    left = result.get("left_cumulative_history", [])
+
+    if not left:
+        print("退店履歴がありません。")
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(left, color="#5a9bd4", linewidth=2, label="退店（累積）")
+
+    ax.set_xlabel("フレーム")
+    ax.set_ylabel("人数")
+    ax.set_title("退店人数の推移（累積）")
+    ax.grid(alpha=0.3)
+    ax.legend()
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=130)
+    plt.close()
+    print(f"退店人数グラフを保存しました: {save_path}")
+
+def plot_left_frame_graph(result, save_path="left_frame_graph.png"):
+    left = result.get("left_cumulative_frame", [])
+
+    if not left:
+        print("退店履歴がありません。")
+        return
+
+    # ★★★ ここで累積化し直す ★★★
+    left_cumsum = []
+    total = 0
+    for x in left:
+        total += x
+        left_cumsum.append(total)
+    # ★★★ ここまで ★★★
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(left_cumsum, color="#5a9bd4", linewidth=2, label="退店（累積・フレーム軸）")
+
+    ax.set_xlabel("フレーム")
+    ax.set_ylabel("人数")
+    ax.set_title("退店人数の推移（累積・フレーム軸）")
+    ax.grid(alpha=0.3)
+    ax.legend()
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=130)
+    plt.close()
+    print(f"退店人数（フレーム軸）グラフを保存しました: {save_path}")
 
 #退店理由のグラフ
 def plot_leave_reason_graph(result, save_path="leave_reason_graph.png"):
@@ -817,6 +950,13 @@ if __name__ == "__main__":
     create_animation(result)
     plot_customer_graph(result)
     plot_leave_reason_graph(result)
+    result_window = run_simulation(window_fill_rate=1.0, nonwindow_fill_rate=0.0)
+    result_nonwindow = run_simulation(window_fill_rate=0.0, nonwindow_fill_rate=1.0)
+    plot_entered_only_graph(result_window, "entered_only_window.png")
+    plot_left_only_graph(result_window, "left_only_window.png")
+    plot_left_frame_graph(result_window, "left_frame_window.png")
+
+
 
     # ============================================================
     # 実験：窓側だけ初期満席 × 座席選択戦略（前 or 奥から詰める）
