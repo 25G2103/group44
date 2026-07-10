@@ -68,7 +68,7 @@ N_STEPS = 320
 RANDOM_SEED = 11
 INITIAL_FILL_RATE = 0.3
 
-LEAVE_PROB = 0.012
+LEAVE_PROB = 0.002
 
 STORE_PRICE_LEVEL = 3
 WEIGHT_SOCIAL_PROOF = 0.40
@@ -273,8 +273,8 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
             g.state = "seated"
             g.decided = True
             g.target_seat = s
-            g.time_seated = random.randint(0, 20)
-            g.max_stay = random.randint(60, 150)
+            g.time_seated = 0                      # ★ 0から開始（ランダムに経過させない）
+            g.max_stay = random.randint(200, 320)  # ★ シミュレーション期間中ほぼ最後まで残る
             groups.append(g)
 
     # 初期満席の内訳を記録
@@ -352,7 +352,10 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
                         target.occupied = True
                         target.party_size = g.size
                         g.target_seat = target
-                        g.state = "entering"
+
+                        # ★ 瞬間移動で着席（壁を歩かず、入口で即座に座る）
+                        g.x, g.y = target.cx, target.cy
+                        g.state = "seated"
 
                         entered_total += g.size
                         groups_entered += 1
@@ -363,7 +366,6 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
                     else:
                         passed_total += g.size
                         groups_passed += 1
-                        # 喫煙者/非喫煙者を分けて累積
                         if g.is_smoker:
                             passed_smokers_total += g.size
                         else:
@@ -374,19 +376,7 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
                     if g.x < road_x_end:
                         g.state = "exited"
 
-            elif g.state == "entering":
-                tx, ty = g.target_seat.cx, g.target_seat.cy
-                dx = tx - g.x
-                dy = ty - g.y
-                dist = math.hypot(dx, dy)
-                if dist < 0.15:
-                    g.x, g.y = tx, ty
-                    g.state = "seated"
-                else:
-                    step = min(dist, WALK_SPEED_SLOW)
-                    g.x += dx / dist * step
-                    g.y += dy / dist * step
-
+            
             elif g.state == "seated":
                 if not hasattr(g, "time_seated"):
                     g.time_seated = 0
@@ -440,17 +430,16 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
         window_occ_history.append(w_rate)
         nonwindow_occ_history.append(nw_rate)
 
-   # ============================================================
+# ============================================================
 # ループ終了後の集計
 # ============================================================
     walking_history = []
     entered_history = []
-    passed_history = []
-    
+
     smoker_walking_history = []
     smoker_entered_history = []
 
-# --- 退店人数（フレーム軸）の累積推移 ---
+    # --- 退店人数（フレーム軸）の累積推移 ---
     left_per_frame = [0] * n_steps
     for (frame, size, is_smoker, reason) in leave_history:
         if frame < n_steps:
@@ -462,55 +451,17 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
         total_left += x
         left_cumulative_frame.append(total_left)
 
-# --- 退店人数（イベント軸）の累積（あなたの元コード） ---
+    # --- 退店人数（イベント軸）の累積 ---
     left_cumulative_history = []
     cumulative_left = 0
     for (frame, size, is_smoker, reason) in leave_history:
         cumulative_left += size
         left_cumulative_history.append(cumulative_left)
 
-# --- 歩行中・入店中の人数をフレームごとに集計 ---
+    # --- 歩行中・入店中の人数をフレームごとに集計（1回だけ） ---
     for snap in history:
         walking = sum(grp["size"] for grp in snap["groups"] if grp["state"] == "walking")
-        entered = sum(grp["size"] for grp in snap["groups"] if grp["state"] == "entering")
-
-    walking_history.append(walking)
-    entered_history.append(entered)
-
-    smoker_walking = sum(
-        grp["size"] for grp in snap["groups"]
-        if grp["state"] == "walking" and grp["is_smoker"]
-    )
-    smoker_entered = sum(
-        grp["size"] for grp in snap["groups"]
-        if grp["state"] == "entering" and grp["is_smoker"]
-    )
-
-        # --- 入店人数（フレーム軸）の累積推移 ---
-    entered_per_frame = [0] * n_steps
-    for snap in history:
-        frame_entered = sum(
-            grp["size"] for grp in snap["groups"]
-            if grp["state"] == "entering"
-        )
-        entered_per_frame.append(frame_entered)
-
-    entered_per_frame = []
-    for snap in history:
-        frame_entered = sum(
-            grp["size"] for grp in snap["groups"]
-            if grp["state"] == "entering"
-            )
-        entered_per_frame.append(frame_entered)
-
-
-
-    smoker_walking_history.append(smoker_walking)
-    smoker_entered_history.append(smoker_entered)
-
-    for snap in history:
-        walking = sum(grp["size"] for grp in snap["groups"] if grp["state"] == "walking")
-        entered = sum(grp["size"] for grp in snap["groups"] if grp["state"] == "entering")
+        entered = sum(grp["size"] for grp in snap["groups"] if grp["state"] == "seated")
 
         walking_history.append(walking)
         entered_history.append(entered)
@@ -521,12 +472,11 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
         )
         smoker_entered = sum(
             grp["size"] for grp in snap["groups"]
-            if grp["state"] == "entering" and grp["is_smoker"]
+            if grp["state"] == "seated" and grp["is_smoker"]
         )
 
         smoker_walking_history.append(smoker_walking)
         smoker_entered_history.append(smoker_entered)
-
     return {
         "history": history,
         "occupied_seat_count_history": occupied_seat_count_history,
@@ -827,6 +777,11 @@ def _draw_static_layout(ax, seats):
         ax.add_patch(rect)
         seat_patches[s.index] = rect
 
+        # ★ 追加：席の上に収容人数を表示
+        ax.text(s.cx, s.cy, str(s.capacity), ha="center", va="center",
+                fontsize=7, color="#333", zorder=5)
+
+
     ax.text(13.3, 10.8, "カウンター(1人席)", ha="center", fontsize=9, zorder=3)
     ax.text(7.6, 8.9, "2人席", ha="center", fontsize=9, color="#c0622a", zorder=3)
     ax.text(21.6, 8.9, "4人席×5", ha="center", fontsize=9, zorder=3)
@@ -848,9 +803,9 @@ def _draw_static_layout(ax, seats):
 # アニメーション(GIF)作成
 # ============================================================
 STATE_COLOR = {
-    "walking": "#5a9bd4",
-    "entering": "#e8956a",
-    "seated": "#c0622a",
+    "walking": "#3b82f6",   # 青系（歩行中）
+    "entering": "#f59e0b",  # オレンジ系（入店中）※④で実質使わなくなります
+    "seated": "#10b981",    # 緑系（着席中）
 }
 
 
@@ -860,6 +815,10 @@ def create_animation(result, save_path="restaurant_layout_simulation.gif"):
     seats = result["seats"]
     road_x_start = result["road_x_start"]
 
+    # ★ 追加：初期人数を計算
+    initial_people = result["initial_window_people"] + result["initial_nonwindow_people"]
+
+
     fig, (ax_map, ax_chart) = plt.subplots(
         2, 1, figsize=(13, 10.5), gridspec_kw={"height_ratios": [2.6, 1]}
     )
@@ -867,8 +826,16 @@ def create_animation(result, save_path="restaurant_layout_simulation.gif"):
     seat_patches = _draw_static_layout(ax_map, seats)
     ax_map.set_xlim(ENTRANCE_X - 9.0, max(road_x_start + 1.0, FLOOR_W + 2.0))
 
+    # ★ 追加：初期人数を常時表示するテキスト（動かない固定テキスト）
+    ax_map.text(
+        ENTRANCE_X - 8.5, FLOOR_H + 0.5,
+        f"初期着席人数: {initial_people}人",
+        fontsize=10, color="#333", zorder=8
+    )
+
     title_text = ax_map.set_title("")
     pedestrian_dots = ax_map.scatter([], [], s=130, zorder=6)
+    group_texts = []   # ★ 追加：グループごとの人数ラベル
 
     # --- 下段: 使用卓数の推移グラフ ---
     n_tables = len(seats)
@@ -883,6 +850,11 @@ def create_animation(result, save_path="restaurant_layout_simulation.gif"):
     ax_chart.legend(loc="lower right", fontsize=9)
 
     def update(frame):
+        # ★ 前フレームの人数ラベルを削除
+        for txt in group_texts:
+            txt.remove()
+        group_texts.clear()
+
         snap = history[frame]
 
         for s in seats:
@@ -891,13 +863,29 @@ def create_animation(result, save_path="restaurant_layout_simulation.gif"):
 
         xs, ys, colors = [], [], []
         walking_people = 0
+
         for grp in snap["groups"]:
             if grp["state"] == "walking":
                 walking_people += grp["size"]
-            for off in grp["offsets"]:
-                xs.append(grp["x"] + off)
-                ys.append(grp["y"])
-                colors.append(STATE_COLOR.get(grp["state"], "#999"))
+
+            # ★ 変更点：メンバーごとの点ではなく、グループにつき丸1個
+            xs.append(grp["x"])
+            ys.append(grp["y"])
+            colors.append(STATE_COLOR.get(grp["state"], "#999"))
+
+            # ★ 丸の中央に人数を白文字で表示
+            txt = ax_map.text(
+                grp["x"],
+                grp["y"],
+                str(grp["size"]),
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="white",
+                weight="bold",
+                zorder=7
+            )
+            group_texts.append(txt)
 
         pedestrian_dots.set_offsets(list(zip(xs, ys)) if xs else [[None, None]])
         pedestrian_dots.set_color(colors)
@@ -910,7 +898,11 @@ def create_animation(result, save_path="restaurant_layout_simulation.gif"):
         line.set_data(range(frame + 1), occupied_seat_count_history[:frame + 1])
         point.set_data([frame], [occ_now])
 
-        return list(seat_patches.values()) + [pedestrian_dots, line, point, title_text]
+        return (
+            list(seat_patches.values())
+            + [pedestrian_dots, line, point, title_text]
+            + group_texts   # ★ 追加
+        )
 
     ani = animation.FuncAnimation(
         fig, update, frames=len(history), interval=110, blit=False
@@ -1028,3 +1020,59 @@ if __name__ == "__main__":
     print(f"窓側満席・奥詰め   → 最終使用卓数: {result_window_depth['occupied_seat_count_history'][-1]} / 入店人数: {result_window_depth['entered_total']}")
     print(f"非窓側満席・前詰め → 最終使用卓数: {result_nonwindow_front['occupied_seat_count_history'][-1]} / 入店人数: {result_nonwindow_front['entered_total']}")
     print(f"非窓側満席・奥詰め → 最終使用卓数: {result_nonwindow_depth['occupied_seat_count_history'][-1]} / 入店人数: {result_nonwindow_depth['entered_total']}")
+
+    # --- 窓側満席 × 前から詰める（window戦略） ---
+    result_window_front = run_simulation(
+        window_fill_rate=1.0,
+        nonwindow_fill_rate=0.0,
+        spawn_interval=SPAWN_INTERVAL,
+        seed=RANDOM_SEED,
+        seat_strategy="window"
+    )
+    print("=== 実験：窓側だけ初期満席 × 前から詰める ===")
+    print_results(result_window_front)
+    plot_customer_graph(result_window_front, "customer_window_front.png")
+    plot_leave_reason_graph(result_window_front, save_path="leave_reason_window_front.png")
+    create_animation(result_window_front, save_path="animation_window_front.gif")   # ★ 追加
+
+    # --- 窓側満席 × 奥から詰める（depth戦略） ---
+    result_window_depth = run_simulation(
+        window_fill_rate=1.0,
+        nonwindow_fill_rate=0.0,
+        spawn_interval=SPAWN_INTERVAL,
+        seed=RANDOM_SEED,
+        seat_strategy="depth"
+    )
+    print("=== 実験：窓側だけ初期満席 × 奥から詰める ===")
+    print_results(result_window_depth)
+    plot_customer_graph(result_window_depth, "customer_window_depth.png")
+    plot_leave_reason_graph(result_window_depth, save_path="leave_reason_window_depth.png")
+    create_animation(result_window_depth, save_path="animation_window_depth.gif")   # ★ 追加
+
+    # --- 非窓側満席 × 前から詰める（window戦略） ---
+    result_nonwindow_front = run_simulation(
+        window_fill_rate=0.0,
+        nonwindow_fill_rate=1.0,
+        spawn_interval=SPAWN_INTERVAL,
+        seed=RANDOM_SEED,
+        seat_strategy="window"
+    )
+    print("=== 実験：非窓側だけ初期満席 × 前から詰める ===")
+    print_results(result_nonwindow_front)
+    plot_customer_graph(result_nonwindow_front, save_path="customer_nonwindow_front.png")
+    plot_leave_reason_graph(result_nonwindow_front, save_path="leave_reason_nonwindow_front.png")
+    create_animation(result_nonwindow_front, save_path="animation_nonwindow_front.gif")   # ★ 追加
+
+    # --- 非窓側満席 × 奥から詰める（depth戦略） ---
+    result_nonwindow_depth = run_simulation(
+        window_fill_rate=0.0,
+        nonwindow_fill_rate=1.0,
+        spawn_interval=SPAWN_INTERVAL,
+        seed=RANDOM_SEED,
+        seat_strategy="depth"
+    )
+    print("=== 実験：非窓側だけ初期満席 × 奥から詰める ===")
+    print_results(result_nonwindow_depth)
+    plot_customer_graph(result_nonwindow_depth, save_path="customer_nonwindow_depth.png")
+    plot_leave_reason_graph(result_nonwindow_depth, save_path="leave_reason_nonwindow_depth.png")
+    create_animation(result_nonwindow_depth, save_path="animation_nonwindow_depth.gif")   # ★ 追加
