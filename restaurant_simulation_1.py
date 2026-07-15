@@ -402,6 +402,18 @@ def run_simulation(n_steps=N_STEPS, spawn_interval=SPAWN_INTERVAL, seed=RANDOM_S
                     g.target_seat.party_size = 0
                     g.state = "left"
                     leave_history.append((frame, g.size, g.is_smoker, leave_reason))
+#finish_mealのみの退店にしたい場合は上記のelif文をコメントアウトして下で実行。
+            #elif g.state == "seated":
+                #if not hasattr(g, "time_seated"):
+                    #g.time_seated = 0
+                    #g.max_stay = random.randint(60, 100)
+                #g.time_seated += 1
+
+                #if g.time_seated >= g.max_stay:
+                    #g.target_seat.occupied = False
+                    #g.target_seat.party_size = 0
+                    #g.state = "left"
+                    #leave_history.append((frame, g.size, g.is_smoker, "finished_meal"))        
 
         # 消去
         groups = [g for g in groups if g.state not in ("exited", "left")]
